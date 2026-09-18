@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Ahorros e Ingresos</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans min-h-screen p-4 md:p-8">
+
+    <!-- ============================================================ -->
+    <!-- PANTALLA DE CARGA (mientras Firebase arranca)                -->
+    <!-- ============================================================ -->
+    <div id="pantallaCarga" class="fixed inset-0 bg-slate-900 flex items-center justify-center z-50">
+        <div class="text-center space-y-3">
+            <i class="fa-solid fa-wallet text-emerald-400 text-4xl animate-pulse"></i>
+            <p class="text-slate-400 text-sm">Cargando...</p>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- PANTALLA DE LOGIN (cuando no hay sesión iniciada)            -->
+    <!-- ============================================================ -->
+    <div id="pantallaLogin" class="hidden fixed inset-0 bg-slate-900 flex items-center justify-center z-40 p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl shadow-xl p-8 max-w-sm w-full text-center space-y-5">
+            <i class="fa-solid fa-wallet text-emerald-400 text-4xl"></i>
+            <h1 class="text-xl font-bold">Mi Control Financiero</h1>
+            <p class="text-sm text-slate-400">Inicia sesión con tu cuenta de Google para acceder a tu balance desde cualquier dispositivo.</p>
+            <button onclick="iniciarSesionGoogle()" class="w-full bg-white hover:bg-slate-100 text-slate-800 font-semibold py-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-3">
+                <i class="fa-brands fa-google text-rose-500"></i> Iniciar sesión con Google
+            </button>
+            <p id="errorLogin" class="text-xs text-rose-400 hidden"></p>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- APP PRINCIPAL (oculta hasta que haya sesión)                 -->
+    <!-- ============================================================ -->
+    <div id="appContent" class="hidden max-w-4xl mx-auto space-y-6">
+
+        <!-- HEADER Y PERFIL DE USUARIO -->
+        <header class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold flex items-center gap-3">
+                    <i class="fa-solid fa-wallet text-emerald-400"></i> Mi Control Financiero
+                </h1>
+                <p class="text-sm text-slate-400">Gestiona tus ingresos, gastos fijos, metas y tickets pendientes.</p>
+            </div>
+
+            <!-- Perfil de la cuenta de Google conectada -->
+            <div class="flex items-center gap-3 bg-slate-900 px-4 py-2 rounded-xl border border-slate-700 w-full md:w-auto">
+                <img id="userPhoto" src="" class="w-8 h-8 rounded-full hidden" alt="">
+                <span id="userEmailLabel" class="text-sm text-slate-300 truncate max-w-[160px]"></span>
+                <button onclick="cerrarSesionGoogle()" class="bg-slate-700 hover:bg-rose-600 text-xs px-3 py-1.5 rounded-lg font-medium transition cursor-pointer whitespace-nowrap">
+                    <i class="fa-solid fa-right-from-bracket"></i> Salir
+                </button>
+            </div>
+        </header>
+
+        <!-- SELECTOR DE MES Y AÑO -->
+        <div class="bg-slate-800 border border-slate-700 p-4 rounded-2xl shadow-lg flex justify-between items-center">
+            <span class="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                <i class="fa-solid fa-calendar-days text-indigo-400"></i> Período Activo:
+            </span>
+            <input type="month" id="mesSelector" class="bg-slate-900 border border-slate-700 text-white px-4 py-2 rounded-xl focus:outline-none focus:border-emerald-500 font-medium" onchange="actualizarMes()">
+        </div>
+
+        <!-- TARJETAS DE BALANCE -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="bg-slate-800 border border-slate-700 p-5 rounded-2xl shadow-lg">
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Saldo Inicial</p>
+                <div class="flex items-center gap-2 mt-2">
+                    <input type="number" id="capitalInicialInput" step="0.01" class="text-xl font-bold text-white bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 w-full" onchange="guardarCapitalInicial()" placeholder="0.00">
+                    <span class="text-xl font-bold text-white">€</span>
+                </div>
+            </div>
+            <div class="bg-slate-800 border border-slate-700 p-5 rounded-2xl shadow-lg">
+                <p class="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Ingresos Totales</p>
+                <h3 id="totalIngresos" class="text-2xl font-bold text-emerald-400 mt-1">0.00 €</h3>
+            </div>
+            <div class="bg-slate-800 border border-slate-700 p-5 rounded-2xl shadow-lg">
+                <p class="text-xs font-semibold text-rose-400 uppercase tracking-wider">Gastos Totales</p>
+                <h3 id="totalGastos" class="text-2xl font-bold text-rose-400 mt-1">0.00 €</h3>
+            </div>
+            <div class="bg-slate-800 border border-slate-700 p-5 rounded-2xl shadow-lg">
+                <p class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Saldo Final en Caja</p>
+                <h3 id="saldoFinal" class="text-2xl font-bold text-indigo-400 mt-1">0.00 €</h3>
+            </div>
+        </div>
+
+        <!-- METAS DE AHORRO E INTELIGENCIA DE ROLLOVER -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-slate-800 border border-slate-700 p-5 rounded-2xl shadow-lg space-y-3">
+                <h2 class="text-md font-semibold text-slate-200 flex items-center gap-2">
+                    <i class="fa-solid fa-bullseye text-emerald-400"></i> Meta de Ahorro Mensual
+                </h2>
+                <div class="flex gap-2">
+                    <input type="number" id="metaAhorroInput" step="0.01" placeholder="Ej: 200" class="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 w-full text-white focus:outline-none focus:border-emerald-500">
+                    <button onclick="guardarMetaAhorro()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-xl transition cursor-pointer">Definir</button>
+                </div>
+                <p class="text-xs text-slate-400" id="infoRollover">Arrastre de mes anterior: 0.00 €</p>
+            </div>
+
+            <div class="bg-slate-800 border border-slate-700 p-5 rounded-2xl shadow-lg space-y-2">
+                <h2 class="text-md font-semibold text-slate-200 flex items-center gap-2">
+                    <i class="fa-solid fa-chart-pie text-indigo-400"></i> Distribución de Gastos
+                </h2>
+                <div class="h-32 flex justify-center items-center relative">
+                    <canvas id="graficoGastos"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- GESTIÓN DE GASTOS FIJOS -->
+        <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-lg space-y-4">
+            <h2 class="text-lg font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-receipt text-amber-400"></i> Gastos Fijos Mensuales (Automáticos día 1)
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input type="text" id="nombreGastoFijo" placeholder="Concepto (Ej: Gasolina, Alquiler)" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-white focus:outline-none">
+                <input type="number" id="montoGastoFijo" step="0.01" placeholder="Cantidad (€)" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-white focus:outline-none">
+                <button onclick="agregarGastoFijo()" class="bg-amber-600 hover:bg-amber-500 text-white font-medium py-2 rounded-xl transition cursor-pointer">Añadir Gasto Fijo</button>
+            </div>
+            <div id="listaGastosFijos" class="flex flex-wrap gap-2 pt-2"></div>
+        </div>
+
+        <!-- FORMULARIO PARA AÑADIR MOVIMIENTOS -->
+        <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-lg space-y-4">
+            <h2 class="text-lg font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-circle-plus text-emerald-400"></i> Nuevo Movimiento Puntual
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <input type="text" id="descMov" placeholder="Descripción" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-white focus:outline-none">
+                <input type="number" id="montoMov" step="0.01" placeholder="Importe (€)" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-white focus:outline-none">
+                <select id="tipoMov" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-white focus:outline-none">
+                    <option value="ingreso">Ingreso</option>
+                    <option value="gasto">Gasto</option>
+                    <option value="ahorro">Ahorro Propio</option>
+                </select>
+                <button onclick="agregarMovimiento()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2 rounded-xl transition cursor-pointer">Registrar</button>
+            </div>
+        </div>
+
+        <!-- APARTADO DE CAPTURA DE TICKETS PENDIENTES -->
+        <div class="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-lg space-y-4">
+            <h2 class="text-lg font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-camera text-sky-400"></i> Archivo de Tickets (Gastos Pendientes)
+            </h2>
+            <p class="text-xs text-slate-400">Haz una foto o sube la imagen de tu ticket para registrar el gasto más adelante con calma.</p>
+            <div class="flex flex-col md:flex-row gap-3 items-center">
+                <input type="file" id="ticketInput" accept="image/*" capture="environment" class="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-white w-full text-sm">
+                <button onclick="guardarTicket()" class="bg-sky-600 hover:bg-sky-500 text-white font-medium px-6 py-2 rounded-xl transition w-full md:w-auto cursor-pointer">Subir Ticket</button>
+            </div>
+            <div id="galeriaTickets" class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-3"></div>
+        </div>
+
+        <!-- TABLA DE MOVIMIENTOS -->
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl shadow-lg overflow-hidden">
+            <div class="p-4 border-b border-slate-700 font-semibold">Historial del Mes</div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-900/50 text-slate-400 text-xs uppercase tracking-wider">
+                            <th class="p-4">Tipo</th>
+                            <th class="p-4">Descripción</th>
+                            <th class="p-4">Importe</th>
+                            <th class="p-4 text-right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaMovimientos" class="divide-y divide-slate-700 text-sm">
+                        <!-- Dinámico -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- SCRIPT: FIREBASE (AUTH + FIRESTORE) Y LÓGICA DE LA APP        -->
+    <!-- ============================================================ -->
+    <script type="module">
+        import {
+            initializeApp
+        } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+        import {
+            getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+        } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+        import {
+            getFirestore, doc, setDoc, collection, onSnapshot
+        } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+        // ============================================================
+        // 1) CONFIGURACIÓN DE FIREBASE
+        //    Sustituye estos valores por los de TU proyecto Firebase.
+        //    Los encuentras en: Firebase Console > Configuración del
+        //    proyecto > Tus apps > Config del SDK.
+        // ============================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyBAwoF59ynup24REuT8ifTdu9teLEIDAEU",
+            authDomain: "control-financiero-b46a3.firebaseapp.com",
+            projectId: "control-financiero-b46a3",
+            storageBucket: "control-financiero-b46a3.firebasestorage.app",
+            messagingSenderId: "920642903234",
+            appId: "1:920642903234:web:76c620e14ecad41ce22f5b"
+        };
+
+        const firebaseApp = initializeApp(firebaseConfig);
+        const auth = getAuth(firebaseApp);
+        const firestoreDb = getFirestore(firebaseApp);
+        const googleProvider = new GoogleAuthProvider();
+
+        // ============================================================
+        // 2) ESTADO GLOBAL DE LA APP
+        // ============================================================
+        let db = { meses: {} };
+        let currentUser = null;
+        let unsubscribeMeses = null;
+        let chartInstancia = null;
+        let primeraCargaListener = true;
+
+        function obtenerMesActualStr() {
+            const ahora = new Date();
+            return ahora.toISOString().slice(0, 7);
+        }
+
+        // ============================================================
+        // 3) AUTENTICACIÓN CON GOOGLE
+        // ============================================================
+        window.iniciarSesionGoogle = async function () {
+            const errorEl = document.getElementById('errorLogin');
+            errorEl.classList.add('hidden');
+            try {
+                await signInWithPopup(auth, googleProvider);
+            } catch (e) {
+                errorEl.textContent = "No se pudo iniciar sesión: " + e.message;
+                errorEl.classList.remove('hidden');
+            }
+        };
+
+        window.cerrarSesionGoogle = async function () {
+            await signOut(auth);
+        };
+
+        onAuthStateChanged(auth, (user) => {
+            document.getElementById('pantallaCarga').classList.add('hidden');
+
+            if (unsubscribeMeses) { unsubscribeMeses(); unsubscribeMeses = null; }
+
+            if (user) {
+                currentUser = user;
+                db = { meses: {} };
+                primeraCargaListener = true;
+
+                document.getElementById('pantallaLogin').classList.add('hidden');
+                document.getElementById('userPhoto').src = user.photoURL || "";
+                document.getElementById('userPhoto').classList.toggle('hidden', !user.photoURL);
+                document.getElementById('userEmailLabel').textContent = user.email || user.displayName || "";
+
+                if (!document.getElementById('mesSelector').value) {
+                    document.getElementById('mesSelector').value = obtenerMesActualStr();
+                }
+
+                escucharMesesEnLaNube();
+            } else {
+                currentUser = null;
+                document.getElementById('appContent').classList.add('hidden');
+                document.getElementById('pantallaLogin').classList.remove('hidden');
+            }
+        });
+
+        // ============================================================
+        // 4) SINCRONIZACIÓN EN TIEMPO REAL CON FIRESTORE
+        //    Cualquier cambio hecho desde el iPad o el móvil se refleja
+        //    automáticamente en el otro dispositivo (misma cuenta Google).
+        // ============================================================
+        function escucharMesesEnLaNube() {
+            const mesesRef = collection(firestoreDb, "usuarios", currentUser.uid, "meses");
+            unsubscribeMeses = onSnapshot(mesesRef, (snapshot) => {
+                db.meses = {};
+                snapshot.forEach((docSnap) => {
+                    db.meses[docSnap.id] = docSnap.data();
+                });
+
+                if (primeraCargaListener) {
+                    document.getElementById('appContent').classList.remove('hidden');
+                    primeraCargaListener = false;
+                }
+
+                verificarMesActual();
+                renderApp();
+            }, (error) => {
+                console.error("Error de sincronización:", error);
+            });
+        }
+
+        async function guardarDatos() {
+            if (!currentUser) return;
+            const mesKey = document.getElementById('mesSelector').value || obtenerMesActualStr();
+            const mData = db.meses[mesKey];
+            if (!mData) return;
+            try {
+                await setDoc(doc(firestoreDb, "usuarios", currentUser.uid, "meses", mesKey), mData);
+            } catch (e) {
+                console.error("Error guardando en la nube:", e);
+            }
+        }
+
+        function obtenerMesActualData() {
+            const mesKey = document.getElementById('mesSelector').value || obtenerMesActualStr();
+            if (!db.meses[mesKey]) {
+                db.meses[mesKey] = {
+                    capitalInicial: 0,
+                    metaAhorro: 0,
+                    gastosFijos: [],
+                    movimientos: [],
+                    tickets: []
+                };
+            }
+            return db.meses[mesKey];
+        }
+
+        function verificarMesActual() {
+            const mData = obtenerMesActualData();
+            let huboCambios = false;
+            if (mData.gastosFijos && mData.gastosFijos.length > 0) {
+                const fijosRegistrados = mData.movimientos.filter(m => m.esFijo).map(m => m.desc);
+                mData.gastosFijos.forEach(fijo => {
+                    const descFijo = "[Fijo] " + fijo.nombre;
+                    if (!fijosRegistrados.includes(descFijo)) {
+                        mData.movimientos.unshift({
+                            id: Date.now() + Math.random(),
+                            desc: descFijo,
+                            monto: fijo.monto,
+                            tipo: "gasto",
+                            esFijo: true
+                        });
+                        huboCambios = true;
+                    }
+                });
+            }
+            if (huboCambios) guardarDatos();
+        }
+
+        window.actualizarMes = function () {
+            verificarMesActual();
+            renderApp();
+        };
+
+        window.guardarCapitalInicial = function () {
+            const mData = obtenerMesActualData();
+            mData.capitalInicial = parseFloat(document.getElementById('capitalInicialInput').value) || 0;
+            guardarDatos();
+            renderApp();
+        };
+
+        window.guardarMetaAhorro = function () {
+            const mData = obtenerMesActualData();
+            mData.metaAhorro = parseFloat(document.getElementById('metaAhorroInput').value) || 0;
+            guardarDatos();
+            renderApp();
+        };
+
+        window.agregarGastoFijo = function () {
+            const nombre = document.getElementById('nombreGastoFijo').value.trim();
+            const monto = parseFloat(document.getElementById('montoGastoFijo').value);
+            if (!nombre || isNaN(monto)) return;
+
+            const mData = obtenerMesActualData();
+            mData.gastosFijos.push({ id: Date.now(), nombre, monto });
+
+            mData.movimientos.unshift({
+                id: Date.now() + 1,
+                desc: "[Fijo] " + nombre,
+                monto: monto,
+                tipo: "gasto",
+                esFijo: true
+            });
+
+            document.getElementById('nombreGastoFijo').value = "";
+            document.getElementById('montoGastoFijo').value = "";
+            guardarDatos();
+            renderApp();
+        };
+
+        window.eliminarGastoFijo = function (id) {
+            const mData = obtenerMesActualData();
+            mData.gastosFijos = mData.gastosFijos.filter(f => f.id !== id);
+            guardarDatos();
+            renderApp();
+        };
+
+        window.agregarMovimiento = function () {
+            const desc = document.getElementById('descMov').value.trim();
+            const monto = parseFloat(document.getElementById('montoMov').value);
+            const tipo = document.getElementById('tipoMov').value;
+            if (!desc || isNaN(monto)) return;
+
+            const mData = obtenerMesActualData();
+            mData.movimientos.push({ id: Date.now(), desc, monto, tipo, esFijo: false });
+
+            document.getElementById('descMov').value = "";
+            document.getElementById('montoMov').value = "";
+            guardarDatos();
+            renderApp();
+        };
+
+        window.eliminarMovimiento = function (id) {
+            const mData = obtenerMesActualData();
+            mData.movimientos = mData.movimientos.filter(m => m.id !== id);
+            guardarDatos();
+            renderApp();
+        };
+
+        // Comprime la imagen antes de guardarla, para no superar el
+        // límite de 1 MB por documento que tiene Firestore.
+        function comprimirImagen(file, maxAncho = 900, calidad = 0.6) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const escala = Math.min(1, maxAncho / img.width);
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width * escala;
+                        canvas.height = img.height * escala;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        resolve(canvas.toDataURL('image/jpeg', calidad));
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        window.guardarTicket = async function () {
+            const fileInput = document.getElementById('ticketInput');
+            if (fileInput.files && fileInput.files[0]) {
+                try {
+                    const dataUrl = await comprimirImagen(fileInput.files[0]);
+                    const mData = obtenerMesActualData();
+                    if (!mData.tickets) mData.tickets = [];
+                    mData.tickets.push({ id: Date.now(), img: dataUrl });
+                    await guardarDatos();
+                    renderApp();
+                    fileInput.value = "";
+                } catch (e) {
+                    console.error("Error procesando el ticket:", e);
+                }
+            }
+        };
+
+        window.eliminarTicket = function (id) {
+            const mData = obtenerMesActualData();
+            mData.tickets = mData.tickets.filter(t => t.id !== id);
+            guardarDatos();
+            renderApp();
+        };
+
+        function calcularRolloverAnterior() {
+            const mesKey = document.getElementById('mesSelector').value;
+            if (!mesKey) return 0;
+            let [anio, mes] = mesKey.split('-').map(Number);
+            mes -= 1;
+            if (mes === 0) { mes = 12; anio -= 1; }
+            const mesAntKey = `${anio}-${mes.toString().padStart(2, '0')}`;
+
+            const mesAnt = db.meses[mesAntKey];
+            if (!mesAnt) return 0;
+
+            let ing = 0, gas = 0, aho = 0;
+            mesAnt.movimientos.forEach(m => {
+                if (m.tipo === 'ingreso') ing += m.monto;
+                if (m.tipo === 'gasto') gas += m.monto;
+                if (m.tipo === 'ahorro') aho += m.monto;
+            });
+
+            const ahorroReal = (mesAnt.capitalInicial + ing) - gas - aho;
+            return ahorroReal - mesAnt.metaAhorro;
+        }
+
+        function renderApp() {
+            const mData = obtenerMesActualData();
+
+            document.getElementById('capitalInicialInput').value = mData.capitalInicial || "";
+            document.getElementById('metaAhorroInput').value = mData.metaAhorro || "";
+
+            let totalIngresos = 0;
+            let totalGastos = 0;
+            let totalAhorros = 0;
+
+            const tbody = document.getElementById('tablaMovimientos');
+            tbody.innerHTML = "";
+
+            mData.movimientos.forEach(m => {
+                if (m.tipo === 'ingreso') totalIngresos += m.monto;
+                if (m.tipo === 'gasto') totalGastos += m.monto;
+                if (m.tipo === 'ahorro') totalAhorros += m.monto;
+
+                let colorClase = m.tipo === 'ingreso' ? 'text-emerald-400' : m.tipo === 'gasto' ? 'text-rose-400' : 'text-indigo-400';
+                let signo = m.tipo === 'ingreso' ? '+' : '-';
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-900/30 transition">
+                        <td class="p-4 capitalize font-medium ${colorClase}">${m.tipo}</td>
+                        <td class="p-4 text-slate-300">${m.desc}</td>
+                        <td class="p-4 font-bold ${colorClase}">${signo}${m.monto.toFixed(2)} €</td>
+                        <td class="p-4 text-right">
+                            <button onclick="eliminarMovimiento(${m.id})" class="text-slate-500 hover:text-rose-400 transition cursor-pointer"><i class="fa-solid fa-trash"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            const rollover = calcularRolloverAnterior();
+            const saldoFinal = (mData.capitalInicial + totalIngresos) - totalGastos - totalAhorros + rollover;
+
+            document.getElementById('totalIngresos').innerText = totalIngresos.toFixed(2) + " €";
+            document.getElementById('totalGastos').innerText = totalGastos.toFixed(2) + " €";
+            document.getElementById('saldoFinal').innerText = saldoFinal.toFixed(2) + " €";
+
+            const textoRollover = rollover >= 0 ? `+${rollover.toFixed(2)} € (Ahorro extra acumulado)` : `${rollover.toFixed(2)} € (Déficit arrastrado)`;
+            document.getElementById('infoRollover').innerText = "Arrastre inteligente por desvío mes anterior: " + textoRollover;
+
+            const divFijos = document.getElementById('listaGastosFijos');
+            divFijos.innerHTML = "";
+            mData.gastosFijos.forEach(f => {
+                divFijos.innerHTML += `
+                    <div class="bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs">
+                        <span>${f.nombre}: <strong>${f.monto}€</strong></span>
+                        <button onclick="eliminarGastoFijo(${f.id})" class="text-rose-400 hover:text-rose-300 cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                `;
+            });
+
+            const divTickets = document.getElementById('galeriaTickets');
+            divTickets.innerHTML = "";
+            if (mData.tickets) {
+                mData.tickets.forEach(t => {
+                    divTickets.innerHTML += `
+                        <div class="relative bg-slate-900 border border-slate-700 rounded-xl overflow-hidden group">
+                            <img src="${t.img}" class="w-full h-24 object-cover">
+                            <button onclick="eliminarTicket(${t.id})" class="absolute top-1 right-1 bg-rose-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs shadow hover:bg-rose-500 cursor-pointer">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    `;
+                });
+            }
+
+            actualizarGrafica(mData.movimientos);
+        }
+
+        function actualizarGrafica(movimientos) {
+            const canvasEl = document.getElementById('graficoGastos');
+            if (!canvasEl) return;
+            const ctx = canvasEl.getContext('2d');
+
+            let categorias = {};
+            movimientos.filter(m => m.tipo === 'gasto').forEach(m => {
+                let cat = m.desc.includes('[Fijo]') ? 'Gastos Fijos' : 'Gastos Variables';
+                categorias[cat] = (categorias[cat] || 0) + m.monto;
+            });
+
+            const labels = Object.keys(categorias);
+            const dataVals = Object.values(categorias);
+
+            if (chartInstancia) {
+                chartInstancia.destroy();
+            }
+
+            if (labels.length === 0) {
+                labels.push('Sin gastos');
+                dataVals.push(1);
+            }
+
+            chartInstancia = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: dataVals,
+                        backgroundColor: ['#f43f5e', '#fbbf24', '#6366f1', '#10b981'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { color: '#cbd5e1', font: { size: 10 } } }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
